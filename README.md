@@ -1,0 +1,2 @@
+# emacs-maple-imenu
+imenu
