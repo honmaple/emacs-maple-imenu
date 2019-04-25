@@ -1,0 +1,20 @@
+* emacs-maple-imenu
+  imenu
+  
+** How to use
+   #+begin_src bash
+   git clone https://github.com/honmaple/emacs-maple-imenu ~/.emacs.d/site-lisp/maple-imenu
+   #+end_src
+
+   #+begin_src elisp
+     (require 'maple-imenu)
+     (setq maple-imenu-display-alist '((side . left) (slot . -1)))
+     (evil-leader/set-key "bi" 'maple-imenu)
+
+     ;; with use-package
+     (use-package maple-imenu
+     :ensure nil
+     :commands (maple-imenu)
+     :config
+     (setq maple-imenu-display-alist '((side . left) (slot . -1))))
+   #+end_src

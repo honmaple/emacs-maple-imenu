@@ -62,7 +62,7 @@
   :type 'list
   :group 'maple-imenu)
 
-(defcustom maple-imenu-display-alist '((side . left) (slot . -1))
+(defcustom maple-imenu-display-alist '((side . right) (slot . -1))
   "Used by `display-buffer-in-side-window`."
   :type 'alist
   :group 'maple-imenu)
