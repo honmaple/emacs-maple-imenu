@@ -29,21 +29,43 @@
 (require 'cl-lib)
 (require 'subr-x)
 
+(defconst maple-imenu-name "*maple-imenu*")
+(defvar maple-imenu-buffer nil)
+(defvar maple-imenu-overlays nil)
 
 (defgroup maple-imenu nil
-  "Variables for `maple-imenu' package."
+  "Display imenu in window side."
   :group 'imenu)
 
+(defcustom maple-imenu-auto-update nil
+  "Whether auto update imenu when file save."
+  :type 'boolean
+  :group 'maple-imenu)
 
-(defvar maple-imenu-buffer "*maple-imenu*")
-(defvar maple-imenu-displayed-buffer nil
-  "The buffer who owns the saved imenu entries.")
-(defvar maple-imenu-overlays nil)
-(defvar maple-imenu-width 25)
-(defvar maple-imenu-padding 2)
-(defvar maple-imenu-position 'right)
-(defvar maple-imenu-arrow '("▾" . "▸"))
-(defvar maple-imenu-auto-update nil)
+(defcustom maple-imenu-width 25
+  "Display window width."
+  :type 'number
+  :group 'maple-imenu)
+
+(defcustom maple-imenu-indent 2
+  "Display indent."
+  :type 'number
+  :group 'maple-imenu)
+
+(defcustom maple-imenu-arrow '("▾" . "▸")
+  "Display arrow when show or hide entry."
+  :type 'cons
+  :group 'maple-imenu)
+
+(defcustom maple-imenu-display-action '(maple-imenu--set-buffer)
+  "Display buffer func."
+  :type 'list
+  :group 'maple-imenu)
+
+(defcustom maple-imenu-display-alist '((side . left) (slot . -1))
+  "Used by `display-buffer-in-side-window`."
+  :type 'alist
+  :group 'maple-imenu)
 
 (defface maple-imenu-face
   '((t (:inherit font-lock-keyword-face)))
@@ -57,14 +79,14 @@
 (defmacro maple-imenu--with-buffer (&rest body)
   "Execute the forms in BODY with buffer."
   (declare (indent 0) (debug t))
-  `(let ((buffer (get-buffer-create maple-imenu-buffer)))
+  `(let ((buffer (get-buffer-create maple-imenu-name)))
      (with-current-buffer buffer
        ,@body)))
 
 (defmacro maple-imenu--with-window (&rest body)
   "Execute the forms in BODY with window."
   (declare (indent 0) (debug t))
-  `(let ((window (get-buffer-window maple-imenu-buffer t))
+  `(let ((window (maple-imenu-window))
          (golden-ratio-mode-p (when (featurep 'golden-ratio) golden-ratio-mode)))
      (when golden-ratio-mode-p (golden-ratio-mode -1))
      (when window (with-selected-window window ,@body))
@@ -73,14 +95,14 @@
 (defmacro maple-imenu--with-writable (&rest body)
   "Execute the forms in BODY with window."
   (declare (indent 0) (debug t))
-  `(progn
+  `(save-excursion
      (read-only-mode -1)
      ,@body
      (read-only-mode 1)))
 
-(defun maple-imenu--get-entries(&optional buffer)
+(defun maple-imenu--entries(&optional buffer)
   "Get imenu with &optional BUFFER."
-  (with-current-buffer (or buffer maple-imenu-displayed-buffer (current-buffer))
+  (with-current-buffer (or buffer maple-imenu-buffer (current-buffer))
     (let* ((imenu-max-item-length "Unlimited")
            (imenu-auto-rescan t)
            (imenu-auto-rescan-maxout (if current-prefix-arg
@@ -100,7 +122,7 @@
        text
        'action
        `(lambda (_)
-          (pop-to-buffer maple-imenu-displayed-buffer)
+          (pop-to-buffer maple-imenu-buffer)
           (goto-char ,point))
        'follow-link t
        'face 'maple-imenu-item-face)
@@ -123,13 +145,12 @@
     (if (not (listp item))
         (maple-imenu--item-text items padding)
       (maple-imenu--text keyword padding)
-      (setq padding (+ padding maple-imenu-padding))
+      (setq padding (+ padding maple-imenu-indent))
       (dolist (arg item) (maple-imenu--handler arg padding)))))
 
 (defun maple-imenu--set-buffer (buffer _alist)
   "Display BUFFER _ALIST."
-  (let ((window-pos (if (eq maple-imenu-position 'left) 'left 'right)))
-    (display-buffer-in-side-window buffer `((side . ,window-pos)))))
+  (display-buffer-in-side-window buffer maple-imenu-display-alist))
 
 (defun maple-imenu--set-window ()
   "Reset window width."
@@ -139,20 +160,20 @@
       (if (< (window-width) w)
           (enlarge-window-horizontally (- w (window-width)))))))
 
-(defun maple-imenu--get-level()
+(defun maple-imenu--level()
   "Get current line level."
   (let ((text (thing-at-point 'line t)))
     (- (string-width text) (string-width (string-trim-left text)))))
 
-(defun maple-imenu--get-point()
+(defun maple-imenu--point()
   "Get point."
-  (let* ((level (maple-imenu--get-level))
+  (let* ((level (maple-imenu--level))
          (point (line-end-position))
          stop)
     (save-excursion
       (while (not stop)
         (forward-line 1)
-        (if (and (> (maple-imenu--get-level) level)
+        (if (and (> (maple-imenu--level) level)
                  (< point (point-max)))
             (setq point (line-end-position))
           (setq stop t))))
@@ -161,10 +182,9 @@
 (defun maple-imenu--exchange-arrow(&optional reverse)
   "Exchange arrow with &optional REVERSE."
   (maple-imenu--with-writable
-    (save-excursion
-      (beginning-of-line)
-      (when (search-forward (if reverse (cdr maple-imenu-arrow) (car maple-imenu-arrow)) nil t)
-        (replace-match (if reverse (car maple-imenu-arrow) (cdr maple-imenu-arrow)))))))
+    (beginning-of-line)
+    (when (search-forward (if reverse (cdr maple-imenu-arrow) (car maple-imenu-arrow)) nil t)
+      (replace-match (if reverse (car maple-imenu-arrow) (cdr maple-imenu-arrow))))))
 
 (defun maple-imenu-show-entry(&optional overlay)
   "Show entry with &optional OVERLAY."
@@ -180,7 +200,7 @@
 (defun maple-imenu-hide-entry()
   "Hide entry."
   (interactive)
-  (let ((new-overlay (make-overlay (line-end-position) (maple-imenu--get-point))))
+  (let ((new-overlay (make-overlay (line-end-position) (maple-imenu--point))))
     (maple-imenu--exchange-arrow)
     (push (cons (line-number-at-pos) new-overlay) maple-imenu-overlays)
     (overlay-put new-overlay 'invisible t)))
@@ -189,25 +209,23 @@
   "Toggle entry."
   (interactive)
   (let ((overlay (assq (line-number-at-pos) maple-imenu-overlays)))
-    (if overlay
-        (maple-imenu-show-entry overlay)
+    (if overlay (maple-imenu-show-entry overlay)
       (maple-imenu-hide-entry))))
 
 (defun maple-imenu-update()
   "Update imenu."
   (interactive)
-  (when (get-buffer-window maple-imenu-buffer)
-    (setq maple-imenu-displayed-buffer (current-buffer))
+  (when (maple-imenu-window)
+    (setq maple-imenu-buffer (current-buffer))
     (maple-imenu--with-buffer (maple-imenu-refresh))))
 
 (defun maple-imenu-refresh(&optional entries)
   "Refresh imenu buffer &optional ENTRIES."
   (interactive)
   (maple-imenu--with-writable
-    (save-excursion
-      (erase-buffer)
-      (dolist (item (or entries (maple-imenu--get-entries)))
-        (maple-imenu--handler item))))
+    (erase-buffer)
+    (dolist (item (or entries (maple-imenu--entries)))
+      (maple-imenu--handler item)))
   (maple-imenu--with-window
     (setq window-size-fixed nil)
     (maple-imenu--set-window)
@@ -216,8 +234,8 @@
 (defun maple-imenu-show ()
   "Show."
   (interactive)
-  (setq maple-imenu-displayed-buffer (current-buffer))
-  (let ((entries (maple-imenu--get-entries)))
+  (setq maple-imenu-buffer (current-buffer))
+  (let ((entries (maple-imenu--entries)))
     (if (car entries)
         (maple-imenu--with-buffer
           (maple-imenu-mode)
@@ -228,16 +246,18 @@
 (defun maple-imenu-hide ()
   "Hide."
   (interactive)
-  (let ((window (get-buffer-window maple-imenu-buffer t)))
-    (when window (delete-window window)))
-  (setq maple-imenu-displayed-buffer nil))
+  (when-let ((window (maple-imenu-window)))
+    (delete-window window))
+  (setq maple-imenu-buffer nil))
+
+(defun maple-imenu-window ()
+  "Whether show maple-imenu."
+  (get-buffer-window maple-imenu-name t))
 
 (defun maple-imenu ()
   "Toggle open and close."
   (interactive)
-  (if (get-buffer-window maple-imenu-buffer t)
-      (maple-imenu-hide)
-    (maple-imenu-show)))
+  (if (maple-imenu-window) (maple-imenu-hide) (maple-imenu-show)))
 
 (defvar maple-imenu-mode-map
   (let ((map (make-sparse-keymap)))
@@ -256,7 +276,7 @@
         buffer-read-only t
         truncate-lines -1
         cursor-in-non-selected-windows nil)
-  (pop-to-buffer maple-imenu-buffer '(maple-imenu--set-buffer))
+  (select-window (display-buffer maple-imenu-name maple-imenu-display-action))
   (when maple-imenu-auto-update
     (add-hook 'after-save-hook 'maple-imenu-update)))
 
