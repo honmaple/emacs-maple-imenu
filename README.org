@@ -1,6 +1,7 @@
 * emacs-maple-imenu
-  imenu
-  
+** screenshots
+   [[https://github.com/honmaple/emacs-maple-imenu/blob/master/screenshot/example.png]]
+   [[https://github.com/honmaple/emacs-maple-imenu/blob/master/screenshot/example1.png]]
 ** How to use
    #+begin_src bash
    git clone https://github.com/honmaple/emacs-maple-imenu ~/.emacs.d/site-lisp/maple-imenu
