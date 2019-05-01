@@ -29,7 +29,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 
-(defconst maple-imenu-name "*maple-imenu*")
+(defvar maple-imenu-name "*maple-imenu*")
 (defvar maple-imenu-buffer nil)
 (defvar maple-imenu-overlays nil)
 
@@ -37,8 +37,8 @@
   "Display imenu in window side."
   :group 'imenu)
 
-(defcustom maple-imenu-auto-update nil
-  "Whether auto update imenu when file save."
+(defcustom maple-imenu-autoupdate t
+  "Whether auto update imenu when file save or window change."
   :type 'boolean
   :group 'maple-imenu)
 
@@ -65,6 +65,11 @@
 (defcustom maple-imenu-display-alist '((side . right) (slot . -1))
   "Used by `display-buffer-in-side-window`."
   :type 'alist
+  :group 'maple-imenu)
+
+(defcustom maple-imenu-display-mode '(prog-mode org-mode)
+  "The modes that be allowed to display `."
+  :type 'list
   :group 'maple-imenu)
 
 (defface maple-imenu-face
@@ -215,7 +220,8 @@
 (defun maple-imenu-update()
   "Update imenu."
   (interactive)
-  (when (maple-imenu-window)
+  (when (and (maple-imenu-window)
+             (apply 'derived-mode-p maple-imenu-display-mode))
     (setq maple-imenu-buffer (current-buffer))
     (maple-imenu--with-buffer (maple-imenu-refresh))))
 
@@ -234,21 +240,21 @@
 (defun maple-imenu-show ()
   "Show."
   (interactive)
-  (setq maple-imenu-buffer (current-buffer))
-  (let ((entries (maple-imenu--entries)))
-    (if (car entries)
-        (maple-imenu--with-buffer
-          (maple-imenu-mode)
-          (maple-imenu-refresh entries))
-      (maple-imenu-hide)
-      (message "no imenus found."))))
+  (if-let ((entries (maple-imenu--entries (current-buffer))))
+      (maple-imenu--with-buffer
+        (maple-imenu-mode)
+        (maple-imenu-refresh entries))
+    (maple-imenu-hide)
+    (message "no imenus found.")))
 
 (defun maple-imenu-hide ()
   "Hide."
   (interactive)
   (when-let ((window (maple-imenu-window)))
     (delete-window window))
-  (setq maple-imenu-buffer nil))
+  (setq maple-imenu-buffer nil)
+  (remove-hook 'after-save-hook 'maple-imenu-update)
+  (remove-hook 'window-configuration-change-hook 'maple-imenu-update))
 
 (defun maple-imenu-window ()
   "Whether show maple-imenu."
@@ -277,8 +283,9 @@
         truncate-lines -1
         cursor-in-non-selected-windows nil)
   (select-window (display-buffer maple-imenu-name maple-imenu-display-action))
-  (when maple-imenu-auto-update
-    (add-hook 'after-save-hook 'maple-imenu-update)))
+  (when maple-imenu-autoupdate
+    (add-hook 'after-save-hook 'maple-imenu-update)
+    (add-hook 'window-configuration-change-hook 'maple-imenu-update)))
 
 (provide 'maple-imenu)
 ;;; maple-imenu.el ends here
