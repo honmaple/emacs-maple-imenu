@@ -73,12 +73,11 @@
   :group 'maple-imenu)
 
 (defface maple-imenu-face
-  '((t (:inherit font-lock-keyword-face)))
+  '((t (:inherit font-lock-type-face)))
   "Default face for maple-imenu.")
 
 (defface maple-imenu-item-face
-  '((t (:inherit font-lock-keyword-face
-                 :foreground "chocolate")))
+  '((t (:inherit font-lock-variable-name-face)))
   "Default item face for maple-imenu.")
 
 (defmacro maple-imenu--with-buffer (&rest body)
@@ -105,24 +104,29 @@
      ,@body
      (read-only-mode 1)))
 
+(defun maple-imenu--items (items)
+  "Categorize all the functions of imenu with ITEMS."
+  (if-let ((fns (cl-remove-if #'listp items :key #'cdr)))
+      (nconc (cl-remove-if #'nlistp items :key #'cdr)
+             `(("Functions" ,@fns)))
+    items))
+
 (defun maple-imenu--entries(&optional buffer)
   "Get imenu with &optional BUFFER."
   (with-current-buffer (or buffer maple-imenu-buffer (current-buffer))
     (let* ((imenu-max-item-length "Unlimited")
            (imenu-auto-rescan t)
-           (imenu-auto-rescan-maxout (if current-prefix-arg
-                                         (buffer-size)
-                                       imenu-auto-rescan-maxout))
-           (items (imenu--make-index-alist t)))
-      (delete (assoc "*Rescan*" items) items))))
+           (items (or (ignore-errors (imenu--make-index-alist t)) (list))))
+      (maple-imenu--items
+       (delete (assoc "*Rescan*" items) items)))))
 
-(defun maple-imenu--item-text(item &optional padding)
-  "TEXT ITEM &OPTIONAL PADDING."
+(defun maple-imenu--item-text(item &optional indent)
+  "TEXT ITEM &OPTIONAL INDENT."
   (when (not (string= (car item) ""))
     (let* ((point (cdr item))
            (point (if (overlayp point) (overlay-start point) point))
            (text (replace-regexp-in-string "^dummy::" "" (car item)))
-           (text  (format "%s%s" (make-string (or padding 0) ?\s) text)))
+           (text  (format "%s%s" (make-string (or indent 0) ?\s) text)))
       (insert-button
        text
        'action
@@ -133,25 +137,25 @@
        'face 'maple-imenu-item-face)
       (insert "\n"))))
 
-(defun maple-imenu--text(text &optional padding)
-  "TEXT &OPTIONAL PADDING."
+(defun maple-imenu--text(text &optional indent)
+  "TEXT &OPTIONAL INDENT."
   (insert-button
-   (format "%s%s %s" (make-string (or padding 0) ?\s) (car maple-imenu-arrow) text)
+   (format "%s%s %s" (make-string (or indent 0) ?\s) (car maple-imenu-arrow) text)
    'action 'maple-imenu-toggle-entry
    'face 'maple-imenu-face
    'follow-link t)
   (insert "\n"))
 
-(defun maple-imenu--handler(items &optional padding)
-  "Handler ITEMS &OPTIONAL PADDING."
+(defun maple-imenu--handler(items &optional indent)
+  "Handler ITEMS &OPTIONAL INDENT."
   (let ((keyword (car items))
         (item (cdr items))
-        (padding (or padding 0)))
+        (indent (or indent 0)))
     (if (not (listp item))
-        (maple-imenu--item-text items padding)
-      (maple-imenu--text keyword padding)
-      (setq padding (+ padding maple-imenu-indent))
-      (dolist (arg item) (maple-imenu--handler arg padding)))))
+        (maple-imenu--item-text items indent)
+      (maple-imenu--text keyword indent)
+      (setq indent (+ indent maple-imenu-indent))
+      (dolist (arg item) (maple-imenu--handler arg indent)))))
 
 (defun maple-imenu--set-buffer (buffer _alist)
   "Display BUFFER _ALIST."
@@ -213,9 +217,9 @@
 (defun maple-imenu-toggle-entry(&optional _)
   "Toggle entry."
   (interactive)
-  (let ((overlay (assq (line-number-at-pos) maple-imenu-overlays)))
-    (if overlay (maple-imenu-show-entry overlay)
-      (maple-imenu-hide-entry))))
+  (if-let ((overlay (assq (line-number-at-pos) maple-imenu-overlays)))
+      (maple-imenu-show-entry overlay)
+    (maple-imenu-hide-entry)))
 
 (defun maple-imenu-update()
   "Update imenu."
@@ -225,27 +229,24 @@
     (setq maple-imenu-buffer (current-buffer))
     (maple-imenu--with-buffer (maple-imenu-refresh))))
 
-(defun maple-imenu-refresh(&optional entries)
-  "Refresh imenu buffer &optional ENTRIES."
+(defun maple-imenu-refresh()
+  "Refresh imenu buffer."
   (interactive)
   (maple-imenu--with-writable
     (erase-buffer)
-    (dolist (item (or entries (maple-imenu--entries)))
-      (maple-imenu--handler item)))
-  (maple-imenu--with-window
-    (setq window-size-fixed nil)
-    (maple-imenu--set-window)
-    (setq window-size-fixed 'width)))
+    (dolist (item (maple-imenu--entries))
+      (maple-imenu--handler item))))
 
 (defun maple-imenu-show ()
   "Show."
   (interactive)
-  (if-let ((entries (maple-imenu--entries (current-buffer))))
-      (maple-imenu--with-buffer
-        (maple-imenu-mode)
-        (maple-imenu-refresh entries))
-    (maple-imenu-hide)
-    (message "no imenus found.")))
+  (setq maple-imenu-buffer (current-buffer))
+  (maple-imenu--with-buffer
+    (maple-imenu-mode)
+    (maple-imenu-refresh)
+    (when (= (buffer-size) 0)
+      (maple-imenu-hide)
+      (message "no imenu found"))))
 
 (defun maple-imenu-hide ()
   "Hide."
@@ -283,6 +284,10 @@
         truncate-lines -1
         cursor-in-non-selected-windows nil)
   (select-window (display-buffer maple-imenu-name maple-imenu-display-action))
+  (maple-imenu--with-window
+    (setq window-size-fixed nil)
+    (maple-imenu--set-window)
+    (setq window-size-fixed 'width))
   (when maple-imenu-autoupdate
     (add-hook 'after-save-hook 'maple-imenu-update)
     (add-hook 'window-configuration-change-hook 'maple-imenu-update)))
