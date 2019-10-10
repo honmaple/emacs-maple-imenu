@@ -42,6 +42,11 @@
   :type 'boolean
   :group 'maple-imenu)
 
+(defcustom maple-imenu-autoresize t
+  "Whether auto resize imenu window when item's length is long."
+  :type 'boolean
+  :group 'maple-imenu)
+
 (defcustom maple-imenu-width 25
   "Display window width."
   :type 'number
@@ -91,9 +96,10 @@
   "Execute the forms in BODY with window."
   (declare (indent 0) (debug t))
   `(let ((window (maple-imenu-window))
-         (golden-ratio-mode-p (when (featurep 'golden-ratio) golden-ratio-mode)))
+         (golden-ratio-mode-p (bound-and-true-p golden-ratio-mode)))
      (when golden-ratio-mode-p (golden-ratio-mode -1))
-     (when window (with-selected-window window ,@body))
+     (when window (with-selected-window window
+                    (setq window-size-fixed nil) ,@body (setq window-size-fixed 'width)))
      (when golden-ratio-mode-p (golden-ratio-mode golden-ratio-mode-p))))
 
 (defmacro maple-imenu--with-writable (&rest body)
@@ -224,8 +230,7 @@
 (defun maple-imenu-update()
   "Update imenu."
   (interactive)
-  (when (and (maple-imenu-window)
-             (apply 'derived-mode-p maple-imenu-display-mode))
+  (when (and (maple-imenu-window) (apply 'derived-mode-p maple-imenu-display-mode))
     (setq maple-imenu-buffer (current-buffer))
     (maple-imenu--with-buffer (maple-imenu-refresh))))
 
@@ -235,7 +240,11 @@
   (maple-imenu--with-writable
     (erase-buffer)
     (dolist (item (maple-imenu--entries))
-      (maple-imenu--handler item))))
+      (maple-imenu--handler item)))
+  (when maple-imenu-autoresize
+    (maple-imenu--with-window
+      (let ((fit-window-to-buffer-horizontally t))
+        (fit-window-to-buffer)))))
 
 (defun maple-imenu-show ()
   "Show."
@@ -284,10 +293,7 @@
         truncate-lines -1
         cursor-in-non-selected-windows nil)
   (select-window (display-buffer maple-imenu-name maple-imenu-display-action))
-  (maple-imenu--with-window
-    (setq window-size-fixed nil)
-    (maple-imenu--set-window)
-    (setq window-size-fixed 'width))
+  (maple-imenu--with-window (maple-imenu--set-window))
   (when maple-imenu-autoupdate
     (add-hook 'after-save-hook 'maple-imenu-update)
     (add-hook 'window-configuration-change-hook 'maple-imenu-update)))
